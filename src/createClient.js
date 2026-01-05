@@ -31,6 +31,9 @@ function createClient (options) {
   const version = mcData.version
   const protocolVersion = options.protocolVersion ?? version.version
   const clientVersion = options.clientVersion ?? version.minecraftVersion
+  if (process.env.MINEFLAYER_DEBUG_PROTOCOL) {
+    console.log(`[minecraft-protocol] optVersion=${optVersion} clientVersion=${clientVersion} protocolVersion=${protocolVersion} dataProtocol=${version.version}`)
+  }
   options.majorVersion = version.majorVersion
   options.protocolVersion = protocolVersion
   const hideErrors = options.hideErrors || false
