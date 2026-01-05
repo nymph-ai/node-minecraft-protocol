@@ -29,12 +29,14 @@ function createClient (options) {
   const mcData = require('minecraft-data')(optVersion)
   if (!mcData) throw new Error(`unsupported protocol version: ${optVersion}`)
   const version = mcData.version
+  const protocolVersion = options.protocolVersion ?? version.version
+  const clientVersion = options.clientVersion ?? version.minecraftVersion
   options.majorVersion = version.majorVersion
-  options.protocolVersion = version.version
+  options.protocolVersion = protocolVersion
   const hideErrors = options.hideErrors || false
   const Client = options.Client || DefaultClientImpl
 
-  const client = new Client(false, version.minecraftVersion, options.customPackets, hideErrors)
+  const client = new Client(false, clientVersion, options.customPackets, hideErrors)
 
   tcpDns(client, options)
   if (options.auth instanceof Function) {
