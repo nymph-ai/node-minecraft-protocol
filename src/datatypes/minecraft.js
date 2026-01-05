@@ -11,9 +11,15 @@ module.exports = {
   compressedNbt: [readCompressedNbt, writeCompressedNbt, sizeOfCompressedNbt],
   restBuffer: [readRestBuffer, writeRestBuffer, sizeOfRestBuffer],
   entityMetadataLoop: [readEntityMetadata, writeEntityMetadata, sizeOfEntityMetadata],
-  topBitSetTerminatedArray: [readTopBitSetTerminatedArray, writeTopBitSetTerminatedArray, sizeOfTopBitSetTerminatedArray]
+  topBitSetTerminatedArray: [readTopBitSetTerminatedArray, writeTopBitSetTerminatedArray, sizeOfTopBitSetTerminatedArray],
+  packedVec3: [readPackedVec3, writePackedVec3, sizeOfPackedVec3]
 }
 const PartialReadError = require('protodef').utils.PartialReadError
+
+const PACKED_VEC_ZERO_THRESHOLD = 3.051944088384301e-5
+const PACKED_VEC_COMPONENT_MAX = 32766
+const PACKED_VEC_COMPONENT_MASK = 0x7FFFn
+const PACKED_VEC_CLAMP = 1.7179869183e10
 
 function readVarLong (buffer, offset) {
   return readVarInt(buffer, offset)
@@ -179,4 +185,95 @@ function sizeOfTopBitSetTerminatedArray (value, { type }) {
     size += this.sizeOf(value[i], type, {})
   }
   return size
+}
+
+function clampPackedComponent (value) {
+  if (Number.isNaN(value)) return 0
+  return Math.max(-PACKED_VEC_CLAMP, Math.min(PACKED_VEC_CLAMP, value))
+}
+
+function encodePackedComponent (value) {
+  return Math.round((value * 0.5 + 0.5) * PACKED_VEC_COMPONENT_MAX)
+}
+
+function decodePackedComponent (bits) {
+  const clamped = Math.min(Number(bits & PACKED_VEC_COMPONENT_MASK), PACKED_VEC_COMPONENT_MAX)
+  return (clamped * 2 / PACKED_VEC_COMPONENT_MAX) - 1
+}
+
+function readPackedVec3 (buffer, offset) {
+  if (offset + 1 > buffer.length) { throw new PartialReadError() }
+  const header = buffer.readUInt8(offset)
+  if (header === 0) {
+    return {
+      value: { x: 0, y: 0, z: 0 },
+      size: 1
+    }
+  }
+
+  if (offset + 6 > buffer.length) { throw new PartialReadError() }
+  const hi = buffer.readUInt32BE(offset + 2)
+  const packed = (BigInt(hi) << 16n) | (BigInt(buffer.readUInt8(offset + 1)) << 8n) | BigInt(header)
+  let scale = BigInt(header & 3)
+  let cursor = offset + 6
+
+  if ((header & 4) === 4) {
+    const extra = readVarInt(buffer, cursor)
+    scale |= BigInt(extra.value) << 2n
+    cursor += extra.size
+  }
+
+  const scaleNum = Number(scale)
+  return {
+    value: {
+      x: decodePackedComponent(packed >> 3n) * scaleNum,
+      y: decodePackedComponent(packed >> 18n) * scaleNum,
+      z: decodePackedComponent(packed >> 33n) * scaleNum
+    },
+    size: cursor - offset
+  }
+}
+
+function writePackedVec3 (value, buffer, offset) {
+  const x = clampPackedComponent(value?.x ?? value?.[0] ?? 0)
+  const y = clampPackedComponent(value?.y ?? value?.[1] ?? 0)
+  const z = clampPackedComponent(value?.z ?? value?.[2] ?? 0)
+  const maxAbs = Math.max(Math.abs(x), Math.abs(y), Math.abs(z))
+
+  if (maxAbs < PACKED_VEC_ZERO_THRESHOLD) {
+    buffer.writeUInt8(0, offset)
+    return offset + 1
+  }
+
+  const scale = Math.ceil(maxAbs)
+  const hasExtra = (scale & 3) !== scale
+  const header = hasExtra ? ((scale & 3) | 4) : scale
+  let packed = BigInt(header)
+  packed |= BigInt(encodePackedComponent(x / scale)) << 3n
+  packed |= BigInt(encodePackedComponent(y / scale)) << 18n
+  packed |= BigInt(encodePackedComponent(z / scale)) << 33n
+
+  buffer.writeUInt8(Number(packed & 0xFFn), offset)
+  buffer.writeUInt8(Number((packed >> 8n) & 0xFFn), offset + 1)
+  buffer.writeUInt32BE(Number((packed >> 16n) & 0xFFFFFFFFn), offset + 2)
+  offset += 6
+
+  if (hasExtra) {
+    offset = writeVarInt(scale >> 2, buffer, offset)
+  }
+
+  return offset
+}
+
+function sizeOfPackedVec3 (value) {
+  const x = clampPackedComponent(value?.x ?? value?.[0] ?? 0)
+  const y = clampPackedComponent(value?.y ?? value?.[1] ?? 0)
+  const z = clampPackedComponent(value?.z ?? value?.[2] ?? 0)
+  const maxAbs = Math.max(Math.abs(x), Math.abs(y), Math.abs(z))
+
+  if (maxAbs < PACKED_VEC_ZERO_THRESHOLD) return 1
+
+  const scale = Math.ceil(maxAbs)
+  const hasExtra = (scale & 3) !== scale
+  return 6 + (hasExtra ? sizeOfVarInt(scale >> 2) : 0)
 }
