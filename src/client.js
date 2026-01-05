@@ -10,6 +10,8 @@ const createSerializer = require('./transforms/serializer').createSerializer
 const createDeserializer = require('./transforms/serializer').createDeserializer
 const createCipher = require('./transforms/encryption').createCipher
 const createDecipher = require('./transforms/encryption').createDecipher
+const [readVarInt] = require('protodef').types.varint
+const fs = require('fs')
 
 const closeTimeout = 30 * 1000
 
@@ -116,6 +118,39 @@ class Client extends EventEmitter {
     })
   }
 
+  setRawPacketDump () {
+    if (this._rawDumpSource && this._rawDumpListener) {
+      this._rawDumpSource.off('data', this._rawDumpListener)
+      this._rawDumpSource = null
+      this._rawDumpListener = null
+    }
+    if (this._rawDumpStream) {
+      this._rawDumpStream.end()
+      this._rawDumpStream = null
+    }
+
+    const dumpIdStr = process.env.MINEFLAYER_DUMP_PACKET_ID
+    if (!dumpIdStr) return
+    const dumpId = Number.parseInt(dumpIdStr, 10)
+    if (!Number.isFinite(dumpId)) return
+
+    const dumpPath = process.env.MINEFLAYER_DUMP_PACKET_PATH || '/tmp/mineflayer_packet_dump.hex'
+    this._rawDumpStream = fs.createWriteStream(dumpPath, { flags: 'a' })
+    const source = this.decompressor || this.splitter
+    this._rawDumpListener = (data) => {
+      let id
+      try {
+        id = readVarInt(data, 0).value
+      } catch {
+        return
+      }
+      if (id !== dumpId) return
+      this._rawDumpStream.write(`${Date.now()} id=${id} len=${data.length} ${data.toString('hex')}\n`)
+    }
+    this._rawDumpSource = source
+    source.on('data', this._rawDumpListener)
+  }
+
   set state (newProperty) {
     const oldProperty = this.protocolState
     this.protocolState = newProperty
@@ -133,6 +168,7 @@ class Client extends EventEmitter {
       this.deserializer.removeAllListeners()
     }
     this.setSerializer(this.protocolState)
+    this.setRawPacketDump()
 
     if (!this.compressor) {
       this.serializer.pipe(this.framer)
