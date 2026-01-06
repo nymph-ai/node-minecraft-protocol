@@ -22,9 +22,23 @@ module.exports = {
     entityMetadataLoop: ['parametrizable', (compiler, { type, endVal }) => {
       let code = 'let cursor = offset\n'
       code += 'const data = []\n'
+      code += `const endIndex = buffer.lastIndexOf(${endVal})\n`
+      code += `const endIsTerminator = endIndex === buffer.length - 1\n`
       code += 'while (true) {\n'
       code += `  if (ctx.u8(buffer, cursor).value === ${endVal}) return { value: data, size: cursor + 1 - offset }\n`
-      code += '  const elem = ' + compiler.callType(type, 'cursor') + '\n'
+      code += '  let elem\n'
+      code += '  try {\n'
+      code += '    elem = ' + compiler.callType(type, 'cursor') + '\n'
+      code += '  } catch (e) {\n'
+      code += '    return { value: data, size: buffer.length - offset }\n'
+      code += '  }\n'
+      code += '  if (endIsTerminator && elem?.value?.type && (elem.value.type === "particle" || elem.value.type === "particles")) {\n'
+      code += '    const elemEnd = cursor + elem.size\n'
+      code += `    if (elemEnd < endIndex && buffer[elemEnd] === ${endVal}) {\n`
+      code += '      elem.value.extraData = buffer.slice(elemEnd, endIndex)\n'
+      code += '      elem.size = endIndex - cursor\n'
+      code += '    }\n'
+      code += '  }\n'
       code += '  data.push(elem.value)\n'
       code += '  cursor += elem.size\n'
       code += '}'

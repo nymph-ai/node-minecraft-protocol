@@ -115,6 +115,8 @@ function sizeOfRestBuffer (value) {
 function readEntityMetadata (buffer, offset, { type, endVal }) {
   let cursor = offset
   const metadata = []
+  const endIndex = buffer.lastIndexOf(endVal)
+  const endIsTerminator = endIndex === buffer.length - 1
   let item
   while (true) {
     if (offset + 1 > buffer.length) { throw new PartialReadError() }
@@ -126,6 +128,13 @@ function readEntityMetadata (buffer, offset, { type, endVal }) {
       }
     }
     const results = this.read(buffer, cursor, type, {})
+    if (endIsTerminator && results?.value?.type && (results.value.type === 'particle' || results.value.type === 'particles')) {
+      const elemEnd = cursor + results.size
+      if (elemEnd < endIndex && buffer[elemEnd] === endVal) {
+        results.value.extraData = buffer.slice(elemEnd, endIndex)
+        results.size = endIndex - cursor
+      }
+    }
     metadata.push(results.value)
     cursor += results.size
   }
