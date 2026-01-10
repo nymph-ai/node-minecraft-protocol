@@ -65,6 +65,6 @@
     "yggdrasil": "^1.4.0"
   },
   "peerDependencies": {
-    "minecraft-data": "*"
+    "minecraft-data": "npm:@nymph-ai/minecraft-data@3.102.4"
   }
 }
