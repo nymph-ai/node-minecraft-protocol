@@ -85,7 +85,8 @@ if (n !== 0) {
     return { value: { ${opts.otherwise.name}: set }, size: accSize }
   }
     `.trim())
-    }]
+    }],
+    lpVec3: ['native', minecraft.lpVec3[0]]
   },
   Write: {
     varlong: ['native', minecraft.varlong[1]],
@@ -151,7 +152,8 @@ if (${baseName} != null) {
 }
 return offset
     `.trim())
-    }]
+    }],
+    lpVec3: ['native', minecraft.lpVec3[1]]
   },
   SizeOf: {
     varlong: ['native', minecraft.varlong[2]],
@@ -211,6 +213,7 @@ if (${baseName} != null) {
 }
 return size
       `.trim())
-    }]
+    }],
+    lpVec3: ['native', minecraft.lpVec3[2]]
   }
 }
